@@ -45,8 +45,8 @@ process.on('SIGINT', () => {
 
 const agents = {
   "deployment_p5J9lz1Zxe7CYEoo0TZpRVay": "Professor 🧠",
-  "deployment_7sZJSiCqCNDy9bBHTEh7dwd9": "Crypto Buddy 💰",
-  "deployment_SoFftlsf9z4fyA3QCHYkaANq": "Sherlock 🔎"
+  //"deployment_7sZJSiCqCNDy9bBHTEh7dwd9": "Crypto Buddy 💰",
+  //"deployment_SoFftlsf9z4fyA3QCHYkaANq": "Sherlock 🔎"
 };
 
 const proxyConfig = {
