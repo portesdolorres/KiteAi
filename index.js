@@ -220,6 +220,33 @@ function loadWalletsFromFile() {
 let walletProgress = {};  // To track the progress for each wallet
 let walletsCompleted = 0;  // Track how many wallets have completed their cycles
 
+// Function to process agent cycles
+async function processAgentCycle(wallet, agentId, agentName, useProxy) {
+  try {
+    const proxyUrl = useProxy ? getNextProxy() : null;
+    const axiosInstance = createAxiosInstance(proxyUrl);
+
+    // Send a random question to the agent
+    const { question, response } = await sendRandomQuestion(agentId, axiosInstance);
+
+    if (!question || !response) {
+      console.log(chalk.red(`❌ No response from agent ${agentName}`));
+      return;
+    }
+
+    // Log the request and response
+    console.log(chalk.cyan(`💬 Question sent to agent: ${question}`));
+    console.log(chalk.green(`🔄 Response from agent: ${response}`));
+
+    // Report the usage of this agent interaction
+    const options = { agent_id: agentId, question, response };
+    await reportUsage(wallet, options);
+  } catch (error) {
+    console.error(chalk.red(`⚠️ Error processing cycle for ${agentName}: ${error.message}`));
+  }
+}
+
+// Function to start the wallet process
 async function startContinuousProcess(wallet, useProxy) {
   console.log(chalk.blue(`\n📌 Processing wallet: ${wallet}`));
   console.log(chalk.yellow('Press Ctrl+C to stop the script\n'));
@@ -272,6 +299,7 @@ async function startContinuousProcess(wallet, useProxy) {
   }
 }
 
+// Main function
 async function main() {
   displayAppTitle();
 
@@ -310,9 +338,8 @@ async function main() {
 
   loadProxiesFromFile();
 
-  for (const wallet of wallets) {
-    await startContinuousProcess(wallet, mode == '2');
-  }
+  // Run all wallets simultaneously
+  await Promise.all(wallets.map(wallet => startContinuousProcess(wallet, mode == '2')));
 }
 
 main();
