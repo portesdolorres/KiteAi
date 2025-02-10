@@ -244,15 +244,17 @@ async function startContinuousProcess(wallet, useProxy) {
   console.log(chalk.blue(`\n📌 Processing wallet: ${wallet}`));
   console.log(chalk.yellow('Press Ctrl+C to stop the script\n'));
 
+  let cycleCount = 0; // Track individual wallet cycle count
+
   while (isRunning) {
-    if (globalCycleCount > 3) {
-      console.log(chalk.yellow(`\n🔒 Global cycle limit reached! Pausing for 24 hours...`));
+    if (cycleCount >= 3) {
+      console.log(chalk.yellow(`\n🔒 Wallet ${wallet} has completed 20 cycles! Pausing for 24 hours...`));
       await sleep(86400000); // Sleep for 24 hours (86400000 ms)
-      globalCycleCount = 1; // Reset global cycle count after 24 hours
-      console.log(chalk.green('✅ 24 hours passed. Resuming cycles...'));
+      cycleCount = 0; // Reset cycle count after 24 hours
+      console.log(chalk.green(`✅ Wallet ${wallet} is resuming after 24 hours.`));
     }
 
-    console.log(chalk.magenta(`\n🔄 Global Cycle #${globalCycleCount}`));
+    console.log(chalk.magenta(`\n🔄 Wallet Cycle #${cycleCount + 1}`));
     console.log(chalk.dim('----------------------------------------'));
 
     // Process agents for the current wallet concurrently
@@ -266,12 +268,12 @@ async function startContinuousProcess(wallet, useProxy) {
     // Wait for all agents to finish for the current wallet
     await Promise.all(agentPromises);
 
-    globalCycleCount++; // Increment the global cycle count
+    cycleCount++; // Increment the cycle count for the wallet
     console.clear();
     console.log(chalk.blue(`\n📌 Processing wallet: ${wallet}`));
-    console.log(chalk.magenta(`🔄 Global Cycle #${globalCycleCount}`));
+    console.log(chalk.magenta(`🔄 Wallet Cycle #${cycleCount + 1}`));
     console.log(chalk.dim('----------------------------------------'));
-    console.log(chalk.green(`✅ Wallet ${wallet} processed ${globalCycleCount - 1} cycles.`));
+    console.log(chalk.green(`✅ Wallet ${wallet} processed ${cycleCount} cycles.`));
     console.log(chalk.yellow(`⏳ Next wallet: ${wallet} will be processed in the next cycle.`));
     console.log(chalk.yellow('Press Ctrl+C to stop the script\n'));
   }
