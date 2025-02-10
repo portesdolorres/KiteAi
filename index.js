@@ -1,4 +1,3 @@
-// Import dependencies
 import chalk from 'chalk';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
@@ -32,6 +31,7 @@ const rateLimitConfig = {
 
 let lastRequestTime = Date.now();
 let isRunning = true;
+let globalCycleCount = 1; // Global cycle count
 
 // Handle CTRL+C to gracefully stop the script
 process.on('SIGINT', () => {
@@ -64,15 +64,9 @@ const calculateDelay = (attempt) => {
   );
 };
 
-// Modified to use correct endpoint and handle specific error cases
+// Function to simulate wallet verification (for now, it returns true always)
 async function verifyWallet(wallet) {
-  try {
-    // Skip wallet verification and proceed with usage reporting
-    return true;
-  } catch (error) {
-    console.log(chalk.yellow('⚠️ Proceeding without wallet verification...'));
-    return true;
-  }
+  return true;
 }
 
 const checkRateLimit = async () => {
@@ -84,7 +78,7 @@ const checkRateLimit = async () => {
     const waitTime = minimumInterval - timeSinceLastRequest;
     await sleep(waitTime);
   }
-  
+
   lastRequestTime = Date.now();
 };
 
@@ -160,7 +154,7 @@ function displayAppTitle() {
 async function sendRandomQuestion(agent, axiosInstance) {
   try {
     await checkRateLimit();
-    
+
     const randomQuestions = JSON.parse(fs.readFileSync('questions.json', 'utf-8'));
     const randomQuestion = randomQuestions[Math.floor(Math.random() * randomQuestions.length)];
 
@@ -204,7 +198,6 @@ async function reportUsage(wallet, options, retryCount = 0) {
       return reportUsage(wallet, options, retryCount + 1);
     }
     
-    // Log the error but continue execution
     console.log(chalk.yellow('⚠️ Usage report issue, continuing execution...'));
   }
 }
@@ -231,10 +224,10 @@ async function processAgentCycle(wallet, agentId, agentName, useProxy) {
     }
 
     const nanya = await sendRandomQuestion(agentId, axiosInstance);
-    
+
     if (nanya) {
       console.log(chalk.cyan('❓ Question:'), chalk.bold(nanya.question));
-      console.log(chalk.green('💡 Answer:'), chalk.italic(nanya?.response?.content ?? ''));
+      console.log(chalk.green('💡 Answer:'), chalk.italic(nanya?.response?.content ?? 'No answer'));
 
       await reportUsage(wallet, {
         agent_id: agentId,
@@ -251,26 +244,38 @@ async function startContinuousProcess(wallet, useProxy) {
   console.log(chalk.blue(`\n📌 Processing wallet: ${wallet}`));
   console.log(chalk.yellow('Press Ctrl+C to stop the script\n'));
 
-  let cycleCount = 1;
-
   while (isRunning) {
-    console.log(chalk.magenta(`\n🔄 Cycle #${cycleCount}`));
+    if (globalCycleCount > 20) {
+      console.log(chalk.yellow(`\n🔒 Global cycle limit reached! Pausing for 24 hours...`));
+      await sleep(86400000); // Sleep for 24 hours (86400000 ms)
+      globalCycleCount = 1; // Reset global cycle count after 24 hours
+      console.log(chalk.green('✅ 24 hours passed. Resuming cycles...'));
+    }
+
+    console.log(chalk.magenta(`\n🔄 Global Cycle #${globalCycleCount}`));
     console.log(chalk.dim('----------------------------------------'));
 
+    // Process agents for the current wallet
     for (const [agentId, agentName] of Object.entries(agents)) {
       if (!isRunning) break;
       
       console.log(chalk.magenta(`\n🤖 Using Agent: ${agentName}`));
       await processAgentCycle(wallet, agentId, agentName, useProxy);
-      
+
       if (isRunning) {
-        console.log(chalk.yellow(`⏳ Waiting ${rateLimitConfig.intervalBetweenCycles/1000} seconds before next interaction...`));
+        console.log(chalk.yellow(`⏳ Waiting ${rateLimitConfig.intervalBetweenCycles / 1000} seconds before next interaction...`));
         await sleep(rateLimitConfig.intervalBetweenCycles);
       }
     }
 
-    cycleCount++;
+    globalCycleCount++; // Increment the global cycle count
+    console.clear();
+    console.log(chalk.blue(`\n📌 Processing wallet: ${wallet}`));
+    console.log(chalk.magenta(`🔄 Global Cycle #${globalCycleCount}`));
     console.log(chalk.dim('----------------------------------------'));
+    console.log(chalk.green(`✅ Wallet ${wallet} processed ${globalCycleCount - 1} cycles.`));
+    console.log(chalk.yellow(`⏳ Next wallet: ${wallet} will be processed in the next cycle.`));
+    console.log(chalk.yellow('Press Ctrl+C to stop the script\n'));
   }
 }
 
@@ -321,6 +326,7 @@ async function main() {
       wallets = [wallet.toLowerCase()];
     }
 
+    // Process each wallet in the list
     for (const wallet of wallets) {
       await startContinuousProcess(wallet, proxyConfig.enabled);
     }
