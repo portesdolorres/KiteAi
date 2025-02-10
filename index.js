@@ -220,6 +220,20 @@ function loadWalletsFromFile() {
 let walletProgress = {};  // To track the progress for each wallet
 let walletsCompleted = 0;  // Track how many wallets have completed their cycles
 
+// Function to process each agent's cycle
+async function processAgentCycle(wallet, agentId, agentName, useProxy) {
+  const proxyUrl = useProxy ? getNextProxy() : null;
+  const axiosInstance = createAxiosInstance(proxyUrl);
+  const { question, response } = await sendRandomQuestion(agentId, axiosInstance);
+
+  if (question && response) {
+    const options = { agent_id: agentId, question, response };
+    await reportUsage(wallet, options);
+
+    console.log(chalk.green(`✅ Processed question from agent: ${agentName}`));
+  }
+}
+
 async function startContinuousProcess(wallet, useProxy, wallets) {
   console.log(chalk.blue(`\n📌 Processing wallet: ${wallet}`));
   console.log(chalk.yellow('Press Ctrl+C to stop the script\n'));
