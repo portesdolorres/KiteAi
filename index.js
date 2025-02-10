@@ -31,6 +31,7 @@ const rateLimitConfig = {
 
 let lastRequestTime = Date.now();
 let isRunning = true;
+let globalCycleCount = 1; // Global cycle count
 
 // Handle CTRL+C to gracefully stop the script
 process.on('SIGINT', () => {
@@ -44,8 +45,8 @@ process.on('SIGINT', () => {
 
 const agents = {
   "deployment_p5J9lz1Zxe7CYEoo0TZpRVay": "Professor 🧠",
-  //"deployment_7sZJSiCqCNDy9bBHTEh7dwd9": "Crypto Buddy 💰",
-  //"deployment_SoFftlsf9z4fyA3QCHYkaANq": "Sherlock 🔎"
+  "deployment_7sZJSiCqCNDy9bBHTEh7dwd9": "Crypto Buddy 💰",
+  "deployment_SoFftlsf9z4fyA3QCHYkaANq": "Sherlock 🔎"
 };
 
 const proxyConfig = {
@@ -63,13 +64,9 @@ const calculateDelay = (attempt) => {
   );
 };
 
+// Function to simulate wallet verification (for now, it returns true always)
 async function verifyWallet(wallet) {
-  try {
-    return true;
-  } catch (error) {
-    console.log(chalk.yellow('⚠️ Proceeding without wallet verification...'));
-    return true;
-  }
+  return true;
 }
 
 const checkRateLimit = async () => {
@@ -81,7 +78,7 @@ const checkRateLimit = async () => {
     const waitTime = minimumInterval - timeSinceLastRequest;
     await sleep(waitTime);
   }
-  
+
   lastRequestTime = Date.now();
 };
 
@@ -157,7 +154,7 @@ function displayAppTitle() {
 async function sendRandomQuestion(agent, axiosInstance) {
   try {
     await checkRateLimit();
-    
+
     const randomQuestions = JSON.parse(fs.readFileSync('questions.json', 'utf-8'));
     const randomQuestion = randomQuestions[Math.floor(Math.random() * randomQuestions.length)];
 
@@ -217,76 +214,71 @@ function loadWalletsFromFile() {
   }
 }
 
-let walletProgress = {};  // To track the progress for each wallet
-let walletsCompleted = 0;  // Track how many wallets have completed their cycles
-
-// Function to process each agent's cycle
 async function processAgentCycle(wallet, agentId, agentName, useProxy) {
-  const proxyUrl = useProxy ? getNextProxy() : null;
-  const axiosInstance = createAxiosInstance(proxyUrl);
-  const { question, response } = await sendRandomQuestion(agentId, axiosInstance);
+  try {
+    const proxy = useProxy ? getNextProxy() : null;
+    const axiosInstance = createAxiosInstance(proxy);
 
-  if (question && response) {
-    const options = { agent_id: agentId, question, response };
-    await reportUsage(wallet, options);
+    if (proxy) {
+      console.log(chalk.blue(`🌐 Using proxy: ${proxy}`));
+    }
 
-    console.log(chalk.green(`✅ Processed question from agent: ${agentName}`));
+    const nanya = await sendRandomQuestion(agentId, axiosInstance);
+
+    if (nanya) {
+      console.log(chalk.cyan('❓ Question:'), chalk.bold(nanya.question));
+      console.log(chalk.green('💡 Answer:'), chalk.italic(nanya?.response?.content ?? 'No answer'));
+
+      await reportUsage(wallet, {
+        agent_id: agentId,
+        question: nanya.question,
+        response: nanya?.response?.content ?? 'No answer'
+      });
+    }
+  } catch (error) {
+    console.error(chalk.red('⚠️ Error in agent cycle:'), error.message);
   }
 }
 
-async function startContinuousProcess(wallet, useProxy, wallets) {
+async function startContinuousProcess(wallet, useProxy) {
   console.log(chalk.blue(`\n📌 Processing wallet: ${wallet}`));
   console.log(chalk.yellow('Press Ctrl+C to stop the script\n'));
 
-  let cycleCount = 1;
-
-  // Initialize progress for the wallet
-  walletProgress[wallet] = 0;
+  let cycleCount = 0; // Track individual wallet cycle count
 
   while (isRunning) {
-    console.log(chalk.magenta(`\n🔄 Cycle #${cycleCount}`));
+    if (cycleCount >= 20) {
+      console.log(chalk.yellow(`\n🔒 Wallet ${wallet} has completed 20 cycles! Pausing for 24 hours...`));
+      await sleep(86400000); // Sleep for 24 hours (86400000 ms)
+      cycleCount = 0; // Reset cycle count after 24 hours
+      console.log(chalk.green(`✅ Wallet ${wallet} is resuming after 24 hours.`));
+    }
+
+    console.log(chalk.magenta(`\n🔄 Wallet Cycle #${cycleCount + 1}`));
     console.log(chalk.dim('----------------------------------------'));
 
-    for (const [agentId, agentName] of Object.entries(agents)) {
-      if (!isRunning) break;
-      
+    // Process agents for the current wallet concurrently
+    const agentPromises = Object.entries(agents).map(async ([agentId, agentName]) => {
+      if (!isRunning) return;
+
       console.log(chalk.magenta(`\n🤖 Using Agent: ${agentName}`));
       await processAgentCycle(wallet, agentId, agentName, useProxy);
-      
-      if (isRunning) {
-        console.log(chalk.yellow(`⏳ Waiting ${rateLimitConfig.intervalBetweenCycles/1000} seconds before next interaction...`));
-        await sleep(rateLimitConfig.intervalBetweenCycles);
-      }
-    }
+    });
 
-    // Increment the cycle count for the current wallet
-    walletProgress[wallet] += 1;
+    // Wait for all agents to finish for the current wallet
+    await Promise.all(agentPromises);
 
-    // Check if the wallet has completed 20 cycles
-    if (walletProgress[wallet] >= 3) {
-      console.log(chalk.green(`🎉 Wallet ${wallet} has completed 20 cycles!`));
-      walletsCompleted += 1;
-      console.log(chalk.yellow(`⏳ Pausing wallet ${wallet} for 24 hours...`));
-      
-      // Reset cycle count for 24-hour pause
-      walletProgress[wallet] = 0;
-      
-      // Pause for 24 hours before processing this wallet again
-      await sleep(24 * 60 * 60 * 1000); // 24 hours
-    }
-
-    // Check if all wallets have completed their cycles
-    if (walletsCompleted === wallets.length) {
-      console.log(chalk.green(`🎉 All wallets have completed their 20 cycles! Pausing for 24 hours...`));
-      break; // Exit the loop since all wallets are done
-    }
-
-    cycleCount++;
+    cycleCount++; // Increment the cycle count for the wallet
+    console.clear();
+    console.log(chalk.blue(`\n📌 Processing wallet: ${wallet}`));
+    console.log(chalk.magenta(`🔄 Wallet Cycle #${cycleCount + 1}`));
     console.log(chalk.dim('----------------------------------------'));
+    console.log(chalk.green(`✅ Wallet ${wallet} processed ${cycleCount} cycles.`));
+    console.log(chalk.yellow(`⏳ Next wallet: ${wallet} will be processed in the next cycle.`));
+    console.log(chalk.yellow('Press Ctrl+C to stop the script\n'));
   }
 }
 
-// Main function updated to pass `wallets` into `startContinuousProcess`
 async function main() {
   displayAppTitle();
 
@@ -311,22 +303,37 @@ async function main() {
     });
   };
 
-  const walletMode = await askWalletMode();
-  let wallets = [];
+  try {
+    const mode = await askMode();
+    proxyConfig.enabled = mode === '2';
+    
+    if (proxyConfig.enabled) {
+      loadProxiesFromFile();
+    }
+    
+    const walletMode = await askWalletMode();
+    let wallets = [];
+    
+    if (walletMode === '2') {
+      wallets = loadWalletsFromFile();
+      if (wallets.length === 0) {
+        console.log(chalk.red('❌ No wallets loaded. Stopping program.'));
+        readline.close();
+        return;
+      }
+    } else {
+      const wallet = await askWallet();
+      wallets = [wallet.toLowerCase()];
+    }
 
-  if (walletMode == '1') {
-    const wallet = await askWallet();
-    wallets = [wallet];
-  } else {
-    wallets = loadWalletsFromFile();
-  }
-
-  const mode = await askMode();
-
-  loadProxiesFromFile();
-
-  for (const wallet of wallets) {
-    await startContinuousProcess(wallet, mode == '2', wallets);  // Pass `wallets` here
+    // Process each wallet concurrently
+    const walletPromises = wallets.map(wallet => startContinuousProcess(wallet, proxyConfig.enabled));
+    
+    await Promise.all(walletPromises); // Wait for all wallet processing to finish
+    
+  } catch (error) {
+    console.error(chalk.red('⚠️ An error occurred:'), error);
+    readline.close();
   }
 }
 
