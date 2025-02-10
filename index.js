@@ -45,8 +45,8 @@ process.on('SIGINT', () => {
 
 const agents = {
   "deployment_p5J9lz1Zxe7CYEoo0TZpRVay": "Professor 🧠",
-  "deployment_7sZJSiCqCNDy9bBHTEh7dwd9": "Crypto Buddy 💰",
-  "deployment_SoFftlsf9z4fyA3QCHYkaANq": "Sherlock 🔎"
+  //"deployment_7sZJSiCqCNDy9bBHTEh7dwd9": "Crypto Buddy 💰",
+  //"deployment_SoFftlsf9z4fyA3QCHYkaANq": "Sherlock 🔎"
 };
 
 const proxyConfig = {
@@ -245,7 +245,7 @@ async function startContinuousProcess(wallet, useProxy) {
   console.log(chalk.yellow('Press Ctrl+C to stop the script\n'));
 
   while (isRunning) {
-    if (globalCycleCount > 20) {
+    if (globalCycleCount > 3) {
       console.log(chalk.yellow(`\n🔒 Global cycle limit reached! Pausing for 24 hours...`));
       await sleep(86400000); // Sleep for 24 hours (86400000 ms)
       globalCycleCount = 1; // Reset global cycle count after 24 hours
@@ -255,18 +255,16 @@ async function startContinuousProcess(wallet, useProxy) {
     console.log(chalk.magenta(`\n🔄 Global Cycle #${globalCycleCount}`));
     console.log(chalk.dim('----------------------------------------'));
 
-    // Process agents for the current wallet
-    for (const [agentId, agentName] of Object.entries(agents)) {
-      if (!isRunning) break;
-      
+    // Process agents for the current wallet concurrently
+    const agentPromises = Object.entries(agents).map(async ([agentId, agentName]) => {
+      if (!isRunning) return;
+
       console.log(chalk.magenta(`\n🤖 Using Agent: ${agentName}`));
       await processAgentCycle(wallet, agentId, agentName, useProxy);
+    });
 
-      if (isRunning) {
-        console.log(chalk.yellow(`⏳ Waiting ${rateLimitConfig.intervalBetweenCycles / 1000} seconds before next interaction...`));
-        await sleep(rateLimitConfig.intervalBetweenCycles);
-      }
-    }
+    // Wait for all agents to finish for the current wallet
+    await Promise.all(agentPromises);
 
     globalCycleCount++; // Increment the global cycle count
     console.clear();
@@ -326,10 +324,10 @@ async function main() {
       wallets = [wallet.toLowerCase()];
     }
 
-    // Process each wallet in the list
-    for (const wallet of wallets) {
-      await startContinuousProcess(wallet, proxyConfig.enabled);
-    }
+    // Process each wallet concurrently
+    const walletPromises = wallets.map(wallet => startContinuousProcess(wallet, proxyConfig.enabled));
+    
+    await Promise.all(walletPromises); // Wait for all wallet processing to finish
     
   } catch (error) {
     console.error(chalk.red('⚠️ An error occurred:'), error);
