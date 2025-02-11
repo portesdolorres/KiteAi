@@ -145,6 +145,14 @@ async function processAgentCycle(wallet, agentId, agentName, useProxy) {
   }
 }
 
+
+function displayAppTitle() {
+  console.log(banner);  // Assuming banner is correctly imported from './banner.js'
+  console.log(chalk.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+  console.log(chalk.yellow('Fork from : Mamangzed'));
+  console.log(chalk.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'));
+}
+
 async function startContinuousProcess(wallet, useProxy) {
   console.log(chalk.blue(`\n📌 Processing wallet: ${wallet}`));
   console.log(chalk.yellow('Press Ctrl+C to stop the script\n'));
