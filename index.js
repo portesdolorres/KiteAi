@@ -247,6 +247,7 @@ async function startContinuousProcess(wallet, useProxy) {
   let cycleCount = 0; // Track individual wallet cycle count
 
   while (isRunning) {
+    // Check if 20 cycles have been completed for the current wallet
     if (cycleCount >= 20) {
       console.log(chalk.yellow(`\n🔒 Wallet ${wallet} has completed 20 cycles! Pausing for 24 hours...`));
       await sleep(86400000); // Sleep for 24 hours (86400000 ms)
@@ -254,6 +255,7 @@ async function startContinuousProcess(wallet, useProxy) {
       console.log(chalk.green(`✅ Wallet ${wallet} is resuming after 24 hours.`));
     }
 
+    // Start processing the current cycle
     console.log(chalk.magenta(`\n🔄 Wallet Cycle #${cycleCount + 1}`));
     console.log(chalk.dim('----------------------------------------'));
 
