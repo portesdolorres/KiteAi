@@ -33,20 +33,8 @@ let lastRequestTime = Date.now();
 let isRunning = true;
 let globalCycleCount = 1; // Global cycle count
 
-// Handle CTRL+C to gracefully stop the script
-process.on('SIGINT', () => {
-  console.log(chalk.yellow('\n\n🛑 Stopping the script gracefully...'));
-  isRunning = false;
-  setTimeout(() => {
-    console.log(chalk.green('👋 Thank you for using Kite AI!'));
-    process.exit(0);
-  }, 1000);
-});
-
 const agents = {
   "deployment_p5J9lz1Zxe7CYEoo0TZpRVay": "Professor 🧠",
-  //"deployment_7sZJSiCqCNDy9bBHTEh7dwd9": "Crypto Buddy 💰",
-  //"deployment_SoFftlsf9z4fyA3QCHYkaANq": "Sherlock 🔎"
 };
 
 const proxyConfig = {
@@ -64,91 +52,29 @@ const calculateDelay = (attempt) => {
   );
 };
 
-// Function to simulate wallet verification (for now, it returns true always)
-async function verifyWallet(wallet) {
-  return true;
+const walletProgress = []; // Array to track progress for each wallet
+
+// Function to update the table and display wallet progress
+function updateWalletTable() {
+  console.clear();
+  console.table(walletProgress);
 }
 
-const checkRateLimit = async () => {
-  const now = Date.now();
-  const timeSinceLastRequest = now - lastRequestTime;
-  const minimumInterval = (60000 / rateLimitConfig.requestsPerMinute);
+// Function to display table header with current wallet progress
+function displayWalletProgress(wallet) {
+  const progress = wallet.cyclesCompleted / 20 * 100; // Calculate the percentage of progress
 
-  if (timeSinceLastRequest < minimumInterval) {
-    const waitTime = minimumInterval - timeSinceLastRequest;
-    await sleep(waitTime);
-  }
-
-  lastRequestTime = Date.now();
-};
-
-function loadProxiesFromFile() {
-  try {
-    const proxyList = fs.readFileSync('proxies.txt', 'utf-8')
-      .split('\n')
-      .filter(line => line.trim())
-      .map(proxy => proxy.trim());
-    proxyConfig.proxies = proxyList;
-    console.log(chalk.green(`✅ Successfully loaded ${proxyList.length} proxies from file`));
-  } catch (error) {
-    console.log(chalk.yellow('⚠️ proxies.txt not found or empty. Using direct connection.'));
-  }
-}
-
-function getNextProxy() {
-  if (!proxyConfig.enabled || proxyConfig.proxies.length === 0) {
-    return null;
-  }
-  const proxy = proxyConfig.proxies.shift();
-  proxyConfig.proxies.push(proxy);
-  return proxy;
-}
-
-function createProxyAgent(proxyUrl) {
-  try {
-    if (!proxyUrl) return null;
-
-    if (proxyUrl.startsWith('socks')) {
-      return new SocksProxyAgent(proxyUrl);
-    } else if (proxyUrl.startsWith('http')) {
-      return {
-        https: new HttpsProxyAgent(proxyUrl),
-        http: new HttpProxyAgent(proxyUrl)
-      };
-    }
-    return null;
-  } catch (error) {
-    console.error(chalk.red(`⚠️ Error creating proxy agent: ${error.message}`));
-    return null;
-  }
-}
-
-function createAxiosInstance(proxyUrl = null) {
-  const config = {
-    headers: { 'Content-Type': 'application/json' }
+  // Build a table row for this wallet
+  const progressRow = {
+    "Wallet Address": wallet.address,
+    "Cycles Completed": `${wallet.cyclesCompleted} / 20`,
+    "Current Agent": wallet.currentAgent || 'None',
+    "Status": wallet.status,
+    "Progress": `${Math.round(progress)}% [${'█'.repeat(Math.floor(progress / 10))}${'-'.repeat(10 - Math.floor(progress / 10))}]`
   };
 
-  if (proxyUrl) {
-    const proxyAgent = createProxyAgent(proxyUrl);
-    if (proxyAgent) {
-      if (proxyAgent.https) {
-        config.httpsAgent = proxyAgent.https;
-        config.httpAgent = proxyAgent.http;
-      } else {
-        config.httpsAgent = proxyAgent;
-        config.httpAgent = proxyAgent;
-      }
-    }
-  }
-
-  return axios.create(config);
-}
-
-function displayAppTitle() {
-  console.log(banner);
-  console.log(chalk.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
-  console.log(chalk.yellow('Fork from : Mamangzed'));
-  console.log(chalk.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'));
+  walletProgress.push(progressRow);
+  updateWalletTable(); // Update the table display
 }
 
 async function sendRandomQuestion(agent, axiosInstance) {
@@ -189,28 +115,7 @@ async function reportUsage(wallet, options, retryCount = 0) {
 
     console.log(chalk.green('✅ Usage data reported successfully!\n'));
   } catch (error) {
-    const isRateLimit = error.response?.data?.error?.includes('Rate limit exceeded');
-    
-    if (isRateLimit && retryCount < rateLimitConfig.maxRetries) {
-      const delay = calculateDelay(retryCount);
-      console.log(chalk.yellow(`⏳ Rate limit detected, retrying in ${delay/1000} seconds...`));
-      await sleep(delay);
-      return reportUsage(wallet, options, retryCount + 1);
-    }
-    
     console.log(chalk.yellow('⚠️ Usage report issue, continuing execution...'));
-  }
-}
-
-function loadWalletsFromFile() {
-  try {
-    return fs.readFileSync('wallets.txt', 'utf-8')
-      .split('\n')
-      .filter(wallet => wallet.trim())
-      .map(wallet => wallet.trim().toLowerCase());
-  } catch (error) {
-    console.error(chalk.red('⚠️ Error: wallets.txt not found'));
-    return [];
   }
 }
 
@@ -244,6 +149,15 @@ async function startContinuousProcess(wallet, useProxy) {
   console.log(chalk.blue(`\n📌 Processing wallet: ${wallet}`));
   console.log(chalk.yellow('Press Ctrl+C to stop the script\n'));
 
+  // Initialize wallet progress
+  const walletInfo = {
+    address: wallet,
+    cyclesCompleted: 0,
+    status: 'Running',
+    currentAgent: null
+  };
+  walletProgress.push(walletInfo); // Add new wallet to the progress tracking
+
   let cycleCount = 0; // Track individual wallet cycle count
 
   while (isRunning) {
@@ -252,6 +166,8 @@ async function startContinuousProcess(wallet, useProxy) {
       console.log(chalk.yellow(`\n🔒 Wallet ${wallet} has completed 20 cycles! Pausing for 24 hours...`));
       await sleep(86400000); // Sleep for 24 hours (86400000 ms)
       cycleCount = 0; // Reset cycle count after 24 hours
+      walletInfo.status = 'Paused (24 hours)';
+      updateWalletTable(); // Update the table
       console.log(chalk.green(`✅ Wallet ${wallet} is resuming after 24 hours.`));
     }
 
@@ -263,7 +179,9 @@ async function startContinuousProcess(wallet, useProxy) {
     const agentPromises = Object.entries(agents).map(async ([agentId, agentName]) => {
       if (!isRunning) return;
 
-      console.log(chalk.magenta(`\n🤖 Using Agent: ${agentName}`));
+      walletInfo.currentAgent = agentName; // Set current agent
+      displayWalletProgress(walletInfo); // Update wallet progress in the table
+
       await processAgentCycle(wallet, agentId, agentName, useProxy);
     });
 
@@ -271,13 +189,10 @@ async function startContinuousProcess(wallet, useProxy) {
     await Promise.all(agentPromises);
 
     cycleCount++; // Increment the cycle count for the wallet
-    console.clear();
-    console.log(chalk.blue(`\n📌 Processing wallet: ${wallet}`));
-    console.log(chalk.magenta(`🔄 Wallet Cycle #${cycleCount + 1}`));
-    console.log(chalk.dim('----------------------------------------'));
-    console.log(chalk.green(`✅ Wallet ${wallet} processed ${cycleCount} cycles.`));
-    console.log(chalk.yellow(`⏳ Next wallet: ${wallet} will be processed in the next cycle.`));
-    console.log(chalk.yellow('Press Ctrl+C to stop the script\n'));
+    walletInfo.cyclesCompleted++; // Increment the cycle count for the wallet
+
+    // Update progress for the wallet in the table
+    displayWalletProgress(walletInfo);
   }
 }
 
